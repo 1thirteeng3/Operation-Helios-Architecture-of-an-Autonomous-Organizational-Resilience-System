@@ -1,0 +1,66 @@
+name: CD
+
+# Workflow de entrega contínua: constrói as imagens, publica no ECR e
+# aplica manifests no cluster Kubernetes.  Requer segredos configurados
+# no repositório (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
+# ECR_REPOSITORY, KUBE_CONFIG_DATA).
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker images
+        env:
+          ECR_REPO: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          # Build images
+          docker build -t $ECR_REPO/llm-assistant:$IMAGE_TAG -f services/llm_assistant/Dockerfile .
+          docker build -t $ECR_REPO/recommender-service:$IMAGE_TAG -f services/recommender_service/Dockerfile .
+          # Push images
+          docker push $ECR_REPO/llm-assistant:$IMAGE_TAG
+          docker push $ECR_REPO/recommender-service:$IMAGE_TAG
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBE_CONFIG_DATA" | base64 -d > $HOME/.kube/config
+
+      - name: Deploy manifests to cluster
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPO: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          # Substitui placeholder de imagem nos manifests via sed
+          # Gera arquivos temporários para deployment com o novo tag
+          mkdir -p tmp/manifests
+          for file in services/fastapi/deployment.yaml services/fastapi/service.yaml services/fastapi/hpa.yaml \
+                     services/ingest/deployment.yaml services/ingest/service.yaml services/ingest/hpa.yaml; do
+            sed "s|<IMAGE>|$ECR_REPO/llm-assistant:$IMAGE_TAG|g" "$file" > tmp/manifests/$(basename $file)
+          done
+          kubectl apply -f tmp/manifests/

@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+# Configuração do Prometheus para coletar métricas dos serviços FastAPI e
+# do cluster Kubernetes.  Para uma configuração completa de descoberta
+# automática em clusters EKS, consulte a documentação do Prometheus
+# Operator.  Aqui usamos um exemplo de targets estáticos para
+# demonstração.
+
+scrape_configs:
+  - job_name: 'fastapi-services'
+    metrics_path: /metrics
+    static_configs:
+      # Substitua os targets pelos endereços dos seus serviços
+      - targets: [ 'fastapi-llm-assistant:8000', 'recommender-service:8001' ]
+        labels:
+          service: 'fastapi'
+
+  # Descoberta básica de nodes e pods via Kubernetes API (opcional)
+  # Requer permissões adicionais no cluster e serviceAccount configurado.
+  # - job_name: 'kubernetes-nodes'
+  #   kubernetes_sd_configs:
+  #     - role: node
+  #   relabel_configs:
+  #     - action: labelmap
+  #       regex: __meta_kubernetes_node_label_(.+)

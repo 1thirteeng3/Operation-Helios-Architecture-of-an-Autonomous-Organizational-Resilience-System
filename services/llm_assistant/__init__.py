@@ -1,0 +1,1 @@
+"""Inicializa o serviço de assistente LLM."""

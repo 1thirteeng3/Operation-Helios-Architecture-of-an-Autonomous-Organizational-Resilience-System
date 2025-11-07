@@ -1,0 +1,17 @@
+# Dependências principais para o Helius Sim Lab
+
+fastapi>=0.100
+uvicorn[standard]>=0.23
+pydantic>=1.10
+mlflow>=2.8
+numpy>=1.23
+pandas>=1.5
+networkx>=3.1
+pytest>=7.4
+python-dotenv>=1.0
+# As bibliotecas abaixo são opcionais e podem exigir instalação via
+# extras: torch (PyTorch) e PyTorch Geometric para Graph Neural Networks.
+torch>=2.0; platform_system != "Darwin"
+torch-geometric>=2.3; platform_system != "Darwin"
+prometheus-client>=0.17
+requests>=2.31

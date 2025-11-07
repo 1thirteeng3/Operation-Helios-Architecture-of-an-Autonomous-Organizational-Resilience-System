@@ -1,0 +1,52 @@
+{
+  "uid": "graph-analysis",
+  "title": "Graph Analysis",
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "version": 0,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Community Sizes",
+      "type": "bargauge",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "community_size",
+          "legendFormat": "{{community}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Node Centrality Over Time",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "centrality_score",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

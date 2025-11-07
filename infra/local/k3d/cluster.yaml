@@ -1,0 +1,29 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: helius-sim
+servers: 1
+agents: 3
+image: rancher/k3s:v1.27.4-k3s1
+ports:
+  # mapeia a porta do API server para localhost:6550
+  - port: 6550:6443
+    nodeFilters:
+      - server:0
+volumes:
+  # persistência opcional para etcd
+  - volume: helius-sim-etcd:/var/lib/rancher/k3s/storage
+options:
+  k3s:
+    # ativa traefik como ingress controller
+    server: |
+      --disable=local-storage
+  kubeAPI:
+    host: "127.0.0.1"
+    hostIP: "127.0.0.1"
+  runtime:
+    labels:
+      # aplica labels nos nós agentes
+      - "role=edge@agent:0"
+      - "role=core@agent:1"
+      - "role=gpu@agent:2"

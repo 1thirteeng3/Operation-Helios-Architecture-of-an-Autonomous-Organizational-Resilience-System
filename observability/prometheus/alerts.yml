@@ -1,0 +1,51 @@
+groups:
+  - name: helius-model-alerts
+    rules:
+      # Alerta quando a proporção de respostas inválidas (schemas incorretos ou
+      # falhas de validação) exceder 5% nas últimas 5 minutos.
+      - alert: HighInvalidModelOutputs
+        expr: >-
+          (sum(rate(model_invalid_outputs_total[5m]))
+           / sum(rate(model_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alta taxa de saídas inválidas do modelo"
+          description: >-
+            Mais de 5% das respostas do modelo foram classificadas como inválidas nos últimos 5 minutos.
+
+      # Alerta quando a latência p95 exceder 2 segundos por mais de 5 minutos.
+      - alert: HighRequestLatency
+        expr: >-
+          histogram_quantile(0.95,
+            sum(rate(request_latency_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latência elevada nas requisições"
+          description: >-
+            O percentil 95 das latências das requisições ultrapassou 2 segundos nos últimos 5 minutos.
+
+      # Alerta quando backlog/pipeline de processamento (exemplo: fila Kafka, buffer) exceder limite
+      - alert: PipelineBacklogHigh
+        expr: queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backlog elevado no pipeline de processamento"
+          description: >-
+            O tamanho da fila de processamento excedeu 100 mensagens por mais de 10 minutos.
+
+      # Alerta quando logs esperados não são recebidos há 10 minutos
+      - alert: MissingLogs
+        expr: absent_over_time(log_ingest_events_total[10m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Falha na ingestão de logs"
+          description: >-
+            Nenhum log foi ingerido pelo serviço nos últimos 10 minutos. Verifique o pipeline de logging.
