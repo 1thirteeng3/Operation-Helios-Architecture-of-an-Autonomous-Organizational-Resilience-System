@@ -1,0 +1,214 @@
+@startuml Helius_Architecture_Base
+' =====================================================================
+'  Helius Systems - SysML Architecture Base (PlantUML)
+'  File: sysml/architecture_base.puml
+'  Purpose: Base blueprint for the resilient complex system architecture
+' =====================================================================
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+
+' ---------------------------------------------------------------------
+'  SysML-like stereotypes
+' ---------------------------------------------------------------------
+' «block»      – main structural element (system, subsystem, service)
+' «interface»  – external API / contract
+' «datastore»  – persistent storage / data lake / db
+' «actor»      – external human/system actor
+' ---------------------------------------------------------------------
+
+' Stereotypes visual tweaks (optional)
+hide stereotype
+
+' =====================================================================
+'  TOP-LEVEL CONTEXT
+' =====================================================================
+
+package "Helius Systems – Global Platform" {
+
+    ' ---------------------------------------------------------------
+    ' EXTERNAL ACTORS
+    ' ---------------------------------------------------------------
+    package "External Actors" {
+        actor "Enterprise Client"           as EnterpriseClient       <<actor>>
+        actor "End User / Device"          as EndUser                <<actor>>
+        actor "Operations / SRE Team"      as SRETeam                <<actor>>
+        actor "Data Science / ML Team"     as MLTeam                 <<actor>>
+        actor "Security & Compliance"      as SecTeam                <<actor>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' EDGE & INGESTION LAYER
+    ' ---------------------------------------------------------------
+    package "Edge & Ingestion Layer" {
+
+        component "Edge Devices\n(MQTT Publishers)" as EdgeDevices         <<block>>
+        component "Edge Broker\n(MQTT / Gateway)"   as EdgeBroker          <<block>>
+        component "Telemetry Gateway\n(ingest-service)" as TelemetryGateway <<block>>
+
+        interface "MQTT\nTopics"    as MqttTopics           <<interface>>
+        interface "Ingestion API\n(REST/GRPC)" as IngestAPI <<interface>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' CORE SERVICES LAYER
+    ' ---------------------------------------------------------------
+    package "Core Services Layer" {
+
+        component "API Gateway\n(REST / GraphQL)" as ApiGateway            <<block>>
+        component "Recommendation Engine\n(recommender-service)" as RecoEngine <<block>>
+        component "LLM Router\n(llm-router)"      as LLMRouter             <<block>>
+        component "Business Services\n(billing, user, etc.)" as BizServices <<block>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' DATA & STORAGE LAYER
+    ' ---------------------------------------------------------------
+    package "Data & Storage Layer" {
+
+        component "Operational DBs\n(OLTP)"          as OLTPDB        <<datastore>>
+        component "Data Lake / Warehouse\n(OLAP)"    as DataLake      <<datastore>>
+        component "Feature Store"                    as FeatureStore  <<datastore>>
+        component "Time Series Storage\n(Metrics TSDB)" as MetricsTSDB <<datastore>>
+        component "Graph DB\n(Neo4j / TigerGraph)"   as GraphDB       <<datastore>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' ML / MLOps / LLMOps LAYER
+    ' ---------------------------------------------------------------
+    package "ML / MLOps / LLMOps Layer" {
+
+        component "MLflow Tracker\n& Model Registry" as MLflowTracker <<block>>
+        component "Model Serving\n(ML / GNN / LLM Wrappers)" as ModelServing <<block>>
+        component "Validation Layer\n(py-llm-shield, guards)" as ValidationLayer <<block>>
+        component "Offline Training\n(Pipelines / Notebooks)" as TrainingPipelines <<block>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' OBSERVABILITY & CONTROL LAYER
+    ' ---------------------------------------------------------------
+    package "Observability & Control Layer" {
+
+        component "Monitoring Service\n(monitoring-service)" as MonitoringService <<block>>
+        component "Metrics Collector\n(Prometheus)"          as MetricsCollector  <<block>>
+        component "Logging & Tracing\n(Loki / Traces)"       as LogTracing       <<block>>
+        component "Dashboards\n(Grafana-core)"               as GrafanaCore      <<block>>
+        component "Autoscaler / Control Plane\n(HPA / Policies)" as ControlPlane <<block>>
+        component "Self-Healing Orchestrator\n(Policies, Runbooks-as-Code)" as SelfHealing <<block>>
+    }
+
+    ' ---------------------------------------------------------------
+    ' SECURITY, GOVERNANCE & COMPLIANCE
+    ' ---------------------------------------------------------------
+    package "Security, Governance & Compliance" {
+
+        component "IAM / RBAC\n(Access Control)"     as IAM          <<block>>
+        component "Secrets Manager\n(KMS / Vault)"   as SecretsMgr   <<block>>
+        component "Policy Engine\n(Fairness, XAI,\nRisk Rules)"      as PolicyEngine <<block>>
+        component "Audit & Compliance Logs"          as AuditLogs    <<datastore>>
+    }
+
+} ' end Global Platform package
+
+' =====================================================================
+'  INTERACTIONS (HIGH-LEVEL CONNECTORS)
+' =====================================================================
+
+' ---- External Actors to Edge / API ----
+EndUser          --> EdgeDevices        : telemetry,\nusage events
+EnterpriseClient --> ApiGateway         : API calls,\nconfig, analytics
+SRETeam          --> GrafanaCore        : dashboards,\nalerts
+MLTeam           --> MLflowTracker      : experiments,\nmodels
+SecTeam          --> PolicyEngine       : policies,\nreviews
+
+' ---- Edge to Ingestion ----
+EdgeDevices  --> MqttTopics
+MqttTopics   --> EdgeBroker
+EdgeBroker   --> TelemetryGateway
+TelemetryGateway --> IngestAPI
+TelemetryGateway --> MetricsCollector   : internal metrics
+TelemetryGateway --> LogTracing         : logs
+
+' ---- Core Services ↔ Data ----
+ApiGateway     --> BizServices
+ApiGateway     --> RecoEngine
+RecoEngine     --> FeatureStore
+RecoEngine     --> GraphDB
+RecoEngine     --> DataLake
+BizServices    --> OLTPDB
+BizServices    --> DataLake
+
+' ---- ML / MLOps ----
+TrainingPipelines --> DataLake
+TrainingPipelines --> GraphDB
+TrainingPipelines --> MLflowTracker
+
+MLflowTracker  --> ModelServing
+ModelServing   --> RecoEngine
+ModelServing   --> LLMRouter
+
+ValidationLayer --> ModelServing : validate outputs
+LLMRouter        --> ValidationLayer
+LLMRouter        --> ExternalClient : (e.g. LLM API)\n(optional placeholder)
+
+' ---- Observability & Control ----
+MetricsCollector --> MetricsTSDB
+MetricsCollector --> MonitoringService
+LogTracing       --> MonitoringService
+MonitoringService --> GrafanaCore
+
+MonitoringService --> ControlPlane
+ControlPlane      --> ModelServing      : scale in/out
+ControlPlane      --> BizServices
+ControlPlane      --> TelemetryGateway
+
+SelfHealing --> ControlPlane          : corrective actions
+SelfHealing --> TelemetryGateway     : isolate region
+SelfHealing --> RecoEngine           : fallback mode
+SelfHealing --> MonitoringService    : close the loop
+
+' ---- Security & Governance ----
+IAM        --> ApiGateway
+IAM        --> GrafanaCore
+IAM        --> ModelServing
+IAM        --> BizServices
+SecretsMgr --> TelemetryGateway
+SecretsMgr --> BizServices
+SecretsMgr --> ModelServing
+PolicyEngine --> ValidationLayer
+PolicyEngine --> ControlPlane
+PolicyEngine --> AuditLogs
+MonitoringService --> AuditLogs
+
+' =====================================================================
+'  NOTES / EXTENSION POINTS
+' =====================================================================
+
+note top of TelemetryGateway
+«extension point»
+Adicionar:
+- Filtros anti-duplicação
+- Circuit breakers regionais
+- Buffers e filas (Kafka/Redis)
+end note
+
+note right of RecoEngine
+«extension point»
+Adicionar:
+- Modo fallback estático
+- Regras de confiança mínima
+- Integração com explicabilidade (XAI)
+end note
+
+note bottom of ControlPlane
+«extension point»
+Adicionar:
+- Regras de autoscaling
+  conscientes de observabilidade
+- Limites de custo
+- Estratégias multi-região
+end note
+
+@enduml

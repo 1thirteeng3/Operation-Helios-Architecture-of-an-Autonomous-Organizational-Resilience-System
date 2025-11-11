@@ -1,0 +1,39 @@
+# IMPLEMENTAÇÃO FASE 3: Configuração do Prometheus com K8s Service Discovery
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # Descoberta de serviços Kubernetes (Pods)
+  # Isso substitui os static_configs, permitindo HA e autoscaling.
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['helius'] # Monitora apenas o namespace 'helius'
+    
+    # Filtra pods que têm a anotação 'prometheus.io/scrape: "true"'
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      # Define o path do scrape pela anotação
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      # Define a porta do scrape pela anotação
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: (\d+)
+      # Adiciona labels úteis
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: replace
+        target_label: service

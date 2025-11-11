@@ -1,0 +1,81 @@
+# IMPLEMENTAÇÃO FASE 3: CI com Teste de Saúde
+name: Helius Prototype CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    services:
+      # Simula o serviço MLflow (necessário para o teste)
+      mlflow:
+        image: ghcr.io/mlflow/mlflow:latest
+        ports:
+          - 5000:5000
+        command: >
+          mlflow server
+          --backend-store-uri sqlite:///mlflow.db
+          --default-artifact-root /mlruns
+          --host 0.0.0.0 --port 5000
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: |
+        pip install -r ./services/recommender_service/requirements.txt
+        pip install pytest httpx
+
+    - name: Build Docker Image (Teste)
+      run: |
+        docker build -t helius-reco-ci:latest -f ./services/recommender_service/Dockerfile .
+
+    - name: Run Docker Container (em background)
+      run: |
+        docker run -d --name reco-service --network host \
+          -e MLFLOW_TRACKING_URI="http://127.0.0.1:5000" \
+          -e MLFLOW_MODEL_URI="/mlruns" \
+          -e APP_VERSION="ci-test" \
+          helius-reco-ci:latest
+        
+    - name: Aguardar Serviço (Health Check)
+      # Tenta o /health por 30s. Isso testa o Padrão Fallback.
+      # O serviço DEVE subir (HTTP 200) mesmo que o MLflow não tenha 
+      # o modelo "Production" (que é o caso aqui).
+      run: |
+        pip install requests
+        python -c "import requests, time
+        start = time.time()
+        while time.time() - start < 30:
+            try:
+                resp = requests.get('http://127.0.0.1:8000/health')
+                if resp.status_code == 200:
+                    print('Health Check OK:', resp.json())
+                    # Verifica se ativou o modo fallback (esperado no CI)
+                    if 'fallback' in resp.json().get('model_version', ''):
+                        print('Modo Fallback ativado com sucesso!')
+                        exit(0)
+                    else:
+                        print('Erro: Modo Fallback não foi ativado.')
+                        exit(1) # Deve estar em fallback
+            except requests.ConnectionError:
+                time.sleep(2)
+        print('Health Check falhou após 30s')
+        exit(1)"
+        
+    - name: Smoke Test (Predict Endpoint)
+      run: |
+        curl -X POST http://127.0.0.1:8000/predict \
+        -H "Content-Type: application/json" \
+        -d '{"features": [1.0, 2.0, 3.0, 4.0, 5.0]}'

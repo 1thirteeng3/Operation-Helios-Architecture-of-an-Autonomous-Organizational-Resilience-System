@@ -1,0 +1,1 @@
+fastapi==0.115.0uvicorn[standard]==0.30.0pydantic==2.9.0httpx==0.27.0 # Necessário para chamadas de API (cliente)prometheus-fastapi-instrumentator==7.0.0

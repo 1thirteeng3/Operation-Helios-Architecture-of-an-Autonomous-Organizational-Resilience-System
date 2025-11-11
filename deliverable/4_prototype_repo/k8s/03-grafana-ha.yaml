@@ -1,0 +1,57 @@
+# IMPLEMENTAÇÃO FASE 3: Deployment HA do Grafana
+# Remove o SPOF (replicas: 1)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-core-deployment
+  namespace: helius
+  labels:
+    app: grafana-core
+spec:
+  replicas: 3 # MODIFICAÇÃO: Redundância N+3
+  selector:
+    matchLabels:
+      app: grafana-core
+  template:
+    metadata:
+      labels:
+        app: grafana-core
+    spec:
+      affinity: # MODIFICAÇÃO: Garante distribuição Multi-AZ/Nó
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - grafana-core
+              topologyKey: "topology.kubernetes.io/zone"
+      containers:
+      - name: grafana-core
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SERVER_ROOT_URL
+          value: "/"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        # (Em produção, adicionar persistência para dashboards e fontes de dados)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-core-service
+  namespace: helius
+spec:
+  selector:
+    app: grafana-core
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: ClusterIP # Expor via Ingress ou LoadBalancer

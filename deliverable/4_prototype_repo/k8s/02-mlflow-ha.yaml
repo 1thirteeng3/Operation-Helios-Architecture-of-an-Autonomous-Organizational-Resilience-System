@@ -1,0 +1,74 @@
+# IMPLEMENTAÇÃO FASE 1 e 3: Deployment HA do MLflow
+# Remove o SPOF (replicas: 1) e o armazenamento efêmero (emptyDir)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-tracker-deployment
+  namespace: helius
+  labels:
+    app: mlflow-tracker
+spec:
+  replicas: 3 # MODIFICAÇÃO: Redundância N+3
+  selector:
+    matchLabels:
+      app: mlflow-tracker
+  template:
+    metadata:
+      labels:
+        app: mlflow-tracker
+    spec:
+      affinity: # MODIFICAÇÃO: Garante distribuição Multi-AZ/Nó (Fase 1)
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mlflow-tracker
+              topologyKey: "topology.kubernetes.io/zone"
+      containers:
+      - name: mlflow-tracker
+        image: ghcr.io/mlflow/mlflow:latest # Imagem oficial
+        ports:
+        - containerPort: 5000
+        env:
+        # MODIFICAÇÃO: Aponta para o RDS Multi-AZ (Fase 1)
+        - name: MLFLOW_BACKEND_STORE_URI
+          value: "postgresql://$(DB_USER):$(DB_PASS)@<seu-rds-multi-az-endpoint>:5432/helius"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-db-creds
+              key: DB_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-db-creds
+              key: DB_PASS
+        # MODIFICAÇÃO: Aponta para o S3 (Fase 1)
+        - name: MLFLOW_ARTIFACT_ROOT
+          value: "s3://helius-mlflow-artifacts" # Bucket com CRR
+        command: ["mlflow", "server"]
+        args:
+          - "--backend-store-uri", "$(MLFLOW_BACKEND_STORE_URI)"
+          - "--default-artifact-root", "$(MLFLOW_ARTIFACT_ROOT)"
+          - "--host", "0.0.0.0"
+          - "--port", "5000"
+      # REMOVIDO: Volumes efêmeros (emptyDir)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-tracker-service
+  namespace: helius
+spec:
+  selector:
+    app: mlflow-tracker
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+  type: ClusterIP

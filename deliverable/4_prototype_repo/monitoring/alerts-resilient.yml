@@ -1,0 +1,46 @@
+# IMPLEMENTAÇÃO FASE 3: Alertas para o Control Plane
+groups:
+  - name: helius-resilience-alerts
+    rules:
+      # ALERTA DE DEGRADAÇÃO (Fase 2)
+      # Dispara se o serviço de recomendação estiver operando
+      # no modo fallback (degradado) por mais de 5 minutos.
+      - alert: RecoEngineInFallbackMode
+        expr: reco_engine_in_fallback_mode{service="helius-reco-service"} == 1
+        for: 5m
+        labels:
+          severity: warning # Não é 'critical' porque o serviço está UP
+        annotations:
+          summary: "RecoEngine está em modo Fallback (Degradado)"
+          description: >
+            O serviço de recomendação ({{ $labels.pod }}) falhou ao carregar o modelo
+            primário do MLflow e está servindo predições estáticas/dummy.
+            A disponibilidade está mantida, mas a acurácia está comprometida.
+
+      # ALERTA DE BACKPRESSURE (Fase 2)
+      # (Assumindo que o Kafka/Kinesis exporta 'kafka_consumergroup_lag')
+      - alert: PipelineBacklogHigh
+        expr: sum(kafka_consumergroup_lag{consumergroup="reco-consumers"}) > 10000
+        for: 10m
+        labels:
+          severity: critical # Risco de corrupção de dados ou sobrecarga
+        annotations:
+          summary: "Backlog elevado no pipeline de ingestão (Kafka)"
+          description: >
+            O lag do consumidor do RecoEngine ultrapassou 10.000 mensagens.
+            Risco de backpressure (como no incidente MQTT).
+            **AÇÃO DO CONTROL PLANE: Isolar região de origem.**
+
+      # ALERTA DE DRIFT (Fase 3)
+      - alert: HighInvalidModelOutputs
+        expr: >-
+          (sum(rate(reco_engine_requests_total{status_code=~"4.*"}[5m]))
+           / sum(rate(reco_engine_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alta taxa de saídas inválidas (Drift/Corrupção)"
+          description: >
+            Mais de 5% das requisições de predição estão falhando (HTTP 4xx),
+            indicando Data Drift ou inputs corrompidos.

@@ -1,0 +1,13 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic==2.9.0
+mlflow==2.16.0
+scikit-learn==1.5.0
+numpy==1.26.4
+pandas==2.2.2
+python-dotenv==1.0.1
+
+Dependências para Métricas (Fase 3)
+
+prometheus-fastapi-instrumentator==7.0.0
+psycopg2-binary # Necessário para o driver RDS (PostgreSQL) do MLflow

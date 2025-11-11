@@ -1,0 +1,95 @@
+# IMPLEMENTAÇÃO FASE 1, 2 e 3: Deployment HA do LLM Router
+
+# Primeiro, o ConfigMap para gerir o roteamento
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helius-llm-router-config
+  namespace: helius
+  labels:
+    app: llm-router
+data:
+  APP_VERSION: "0.1.0-k8s"
+  
+  # IMPLEMENTAÇÃO FASE 2: Variáveis de Failover
+  # O 'main.py' do router usará estas variáveis para tentar o primário
+  # e depois o secundário (failover lógico).
+  
+  # Endpoint do serviço de backend primário (ex: na mesma região)
+  LLM_ASSISTANT_PRIMARY_URL: "http://llm-assistant-service.helius.svc.cluster.local:8000"
+  
+  # Endpoint do serviço de backend secundário (ex: noutra região/cluster)
+  LLM_ASSISTANT_SECONDARY_URL: "http://llm-assistant-service.us-west-2.helius-global:8000"
+
+---
+# Segundo, o Deployment HA
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helius-llm-router-deployment
+  namespace: helius
+  labels:
+    app: llm-router
+spec:
+  # MODIFICAÇÃO FASE 3: Redundância N+3 (era 'replicas: 1')
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llm-router
+  template:
+    metadata:
+      labels:
+        app: llm-router
+      annotations:
+        # Habilita scrape do Prometheus (Fase 3)
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics" # (Assumindo que o router também será instrumentado)
+        prometheus.io/port: "8002"
+    spec:
+      # MODIFICAÇÃO FASE 1: Garante distribuição Multi-AZ/Nó
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - llm-router
+              topologyKey: "topology.kubernetes.io/zone"
+      containers:
+        - name: helius-llm-router-container
+          # ATUALIZAR: Mude para a imagem do seu router
+          image: your-registry/helius-llm-router:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8002
+              name: http
+          envFrom:
+            - configMapRef:
+                name: helius-llm-router-config
+          # (Adicionar Liveness/Readiness Probes aqui)
+          readinessProbe:
+            httpGet:
+              path: /health # (Assumindo que /health existe no router)
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-router-service
+  namespace: helius
+  labels:
+    app: llm-router
+spec:
+  type: ClusterIP
+  selector:
+    app: llm-router
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8002

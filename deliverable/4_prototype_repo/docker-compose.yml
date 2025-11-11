@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # 1. Serviço de Controle: MLflow
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlruns
+      --host 0.0.0.0
+      --port 5000
+
+  # 2. Serviço de IA: Recommender (com Fallback Fase 2)
+  reco-service:
+    build:
+      context: .
+      dockerfile: ./services/recommender_service/Dockerfile
+    ports:
+      - "8001:8000" # Mapeado para 8001 localmente
+    environment:
+      APP_VERSION: "0.1.0-local-reco"
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      # (O modelo "Production" não existirá, forçando o MODO FALLBACK no teste)
+      MLFLOW_MODEL_URI: "models:/helius-reco-model/Production"
+    depends_on:
+      - mlflow
+
+  # 3. Serviço de IA: LLM Assistant (Backend)
+  llm-assistant:
+    build:
+      context: .
+      dockerfile: ./services/llm_assistant/Dockerfile
+    ports:
+      - "8000:8000" # Mapeado para 8000 localmente (Primário)
+    environment:
+      APP_VERSION: "0.1.0-local-assistant"
+
+  # 4. Serviço de IA: LLM Router (Gateway com Failover Fase 2)
+  llm-router:
+    build:
+      context: .
+      dockerfile: ./services/llm_router/Dockerfile
+    ports:
+      - "8002:8002" # Mapeado para 8002 localmente
+    environment:
+      APP_VERSION: "0.1.0-local-router"
+      # Aponta para os serviços DNS do Docker Compose
+      LLM_ASSISTANT_PRIMARY_URL: "http://llm-assistant:8000"
+      # (Podemos deixar o secundário vazio para testar o failover parcial)
+      LLM_ASSISTANT_SECONDARY_URL: "" 
+    depends_on:
+      - llm-assistant
+
+networks:
+  default:
+    driver: bridge

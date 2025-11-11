@@ -1,0 +1,95 @@
+# IMPLEMENTAÇÃO FASE 2 e 3: Deployment HA do Serviço de Recomendação
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helius-reco-config
+  namespace: helius
+  labels:
+    app: helius-reco-service
+data:
+  APP_VERSION: "0.1.0-k8s"
+  # Aponta para o serviço K8s do MLflow HA
+  MLFLOW_TRACKING_URI: "http://mlflow-tracker-service.helius.svc.cluster.local:5000"
+  MLFLOW_MODEL_URI: "models:/helius-reco-model/Production"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helius-reco-deployment
+  namespace: helius
+  labels:
+    app: helius-reco-service
+spec:
+  replicas: 3 # MODIFICAÇÃO: Redundância N+3
+  selector:
+    matchLabels:
+      app: helius-reco-service
+  template:
+    metadata:
+      labels:
+        app: helius-reco-service
+      annotations:
+        # IMPLEMENTAÇÃO FASE 3: Habilita scrape do Prometheus
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      affinity: # MODIFICAÇÃO: Garante distribuição Multi-AZ/Nó
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - helius-reco-service
+              topologyKey: "topology.kubernetes.io/zone"
+      containers:
+        - name: helius-reco-container
+          # ATUALIZAR: Mude para seu registry (ex: ECR, GCR)
+          image: your-registry/helius-reco-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: helius-reco-config
+          # Probes de saúde resilientes
+          readinessProbe:
+            httpGet:
+              path: /health # O /health agora é resiliente (Fase 2)
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1024Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helius-reco-service
+  namespace: helius
+  labels:
+    app: helius-reco-service
+spec:
+  type: ClusterIP
+  selector:
+    app: helius-reco-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
